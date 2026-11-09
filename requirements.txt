@@ -1,0 +1,12 @@
+# Python packages (Python 3.10+):  pip install -r requirements.txt
+numpy>=1.24
+opencv-python>=4.8
+pytesseract>=0.3.10
+matplotlib>=3.7
+
+# OCR engine: Tesseract 5 (a system program, not a Python package).
+#   Ubuntu / Colab:  sudo apt-get install -y tesseract-ocr
+#   macOS:           brew install tesseract
+#   Windows:         installer from https://github.com/UB-Mannheim/tesseract/wiki
+#                    (then add the install folder to PATH)
+# Check with:  tesseract --version
