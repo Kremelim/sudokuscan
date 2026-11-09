@@ -63,6 +63,8 @@ def main():
                     cv2.imwrite(str(crops / f"true{true_grid[r, c]}_read{grid[r, c]}_{file.stem}_r{r}c{c}.png"), crop)
         print(file.stem, "done")
 
+    if not confusions and not any(accuracy.values()):
+        sys.exit(f"no annotated images found in {args.annotations}")
     print(f"\n{'variant':<34}{'cell accuracy':>14}")
     for name, values in accuracy.items():
         print(f"{name:<34}{np.mean(values):>14.3f}")

@@ -72,7 +72,7 @@ report/
 | 2 | `select_corners` | Among the candidates lying on that component, the four that span the largest quadrilateral, ordered TL, TR, BR, BL and refined with `cv2.cornerSubPix`. |
 | 3 | `rectify` | A3 (`getAffineTransform`, TL/TR/BL), A4 (`estimateAffine2D`, least squares over four corners) and H4 (`getPerspectiveTransform`), with the A3 fourth-corner error and the A4 RMS residual. |
 | 5 | `find_digits` | Empty-cell criterion: a cell is filled when a connected component smaller than a cell and at least 30 % of its height is centred inside the cell's inner region (7 px margin). |
-| 5 | `prepare_digit`, `ocr` | The digit mask is centred on a white square and given to Tesseract (`--psm 10`, whitelist 1-9). |
+| 5 | `prepare_digit`, `ocr` | The digit mask is centred on a white square, its strokes are thinned by one pixel, and it is given to Tesseract (`--psm 10`, whitelist 1-9). An empty answer is retried with other paddings. |
 | 6 | `find_conflicts` | Repeated digits in a row, column or 3x3 box. |
 
 ## Evaluation and analysis

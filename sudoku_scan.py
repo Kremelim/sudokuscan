@@ -30,8 +30,8 @@ MIN_HEIGHT = 0.3              # a digit is at least this fraction of the cell he
 OCR_SIZE = 40                 # side of the picture given to Tesseract
 WHITELIST = " -c tessedit_char_whitelist=123456789"
 # (Tesseract options, padding) tried in this order until a digit is returned
-OCR_ATTEMPTS = [("--psm 10" + WHITELIST, 2.5), ("--psm 10" + WHITELIST, 2.0),
-                ("--psm 10" + WHITELIST, 3.0), ("--psm 13" + WHITELIST, 2.5)]
+OCR_ATTEMPTS = [("--psm 10" + WHITELIST, pad) for pad in (2.5, 2.0, 3.0, 1.6)]
+OCR_ATTEMPTS.append(("--psm 13" + WHITELIST, 2.5))
 
 
 def odd(x):
@@ -169,12 +169,13 @@ def find_digits(binary):
 
 def prepare_digit(digit, pad):
     """Black digit centred on a white square of side pad x digit height,
-    resized to OCR_SIZE."""
+    with strokes thinned by one pixel, resized to OCR_SIZE."""
     h, w = digit.shape
     side = max(int(h * pad), w + 2)
     canvas = np.full((side, side), 255, np.uint8)
     y, x = (side - h) // 2, (side - w) // 2
     canvas[y:y + h, x:x + w] = 255 - digit
+    canvas = cv2.dilate(canvas, np.ones((2, 2), np.uint8))
     return cv2.resize(canvas, (OCR_SIZE, OCR_SIZE), interpolation=cv2.INTER_AREA)
 
 

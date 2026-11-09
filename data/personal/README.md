@@ -1,7 +1,7 @@
 # Personal dataset
 
 ```
-images/        original, unedited phone photos (EXIF kept), e.g. s<student-number>_01.jpg
+images/        original, unedited phone photos (EXIF kept)
 annotations/   one JSON per photo with the same base name (Appendix A format)
 puzzles/       one text file per printed puzzle: 9 lines of 9 digits, 0 = empty
 ```
@@ -13,7 +13,7 @@ Annotating a photo (corners are clicked by hand, the grid comes from the
 puzzle file):
 
 ```
-python tools/annotate.py --image data/personal/images/s123_01.jpg --grid data/personal/puzzles/puzzle1.txt --conditions C2 C4
+python tools/annotate.py --image data/personal/images/1000053605.jpg --grid data/personal/puzzles/puzzle2_websudoku.txt --conditions C4 C2
 ```
 
 | Condition | Meaning | Minimum |
@@ -23,3 +23,9 @@ python tools/annotate.py --image data/personal/images/s123_01.jpg --grid data/pe
 | C3 | in-plane rotation of 15-30 degrees | 1 |
 | C4 | cast shadow or low light | 1 |
 | C5 | cluttered background | 1 |
+
+| Puzzle file | Source |
+|---|---|
+| `puzzle1_krazydad.txt` | KrazyDad, Easy Sudoku, Volume 21, Book 9, Sudoku #6 |
+| `puzzle2_websudoku.txt` | Web Sudoku, Easy Puzzle 8,468,720,789 |
+| `puzzle3_gazete.txt` | Istanbul newspaper, 08.11.2026 |

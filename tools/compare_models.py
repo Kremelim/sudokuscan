@@ -76,6 +76,8 @@ def main():
         if most_oblique is None or row["obliqueness"] > most_oblique[0]:
             most_oblique = (row["obliqueness"], truth["image"], warped)
 
+    if not rows:
+        sys.exit(f"no annotated images found in {args.annotations}")
     rows.sort(key=lambda r: r["obliqueness"])
     with open(outdir / "model_comparison.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())

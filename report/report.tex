@@ -222,8 +222,8 @@ A4 RMS (px) & 4--10 & 13--20 & 29--55\\
 Line dev.\ A3 (px) & 2.7--10.8 & 7.6--14.5 & 9.9--14.3\\
 Line dev.\ A4 (px) & 1.8--8.8 & 8.7--11.1 & 9.4--16.7\\
 Line dev.\ H4 (px) & 0.5--1.3 & 0.6--0.9 & 0.5--6.2\\
-Cell acc.\ A3 & 0.98--1.00 & 0.77--0.91 & 0.54--0.82\\
-Cell acc.\ A4 & 1.00 & 0.96--1.00 & 0.51--0.77\\
+Cell acc.\ A3 & 0.98--1.00 & 0.77--0.91 & 0.54--0.81\\
+Cell acc.\ A4 & 1.00 & 0.96--1.00 & 0.51--0.78\\
 Cell acc.\ H4 & 1.00 & 1.00 & 1.00\\
 \bottomrule
 \end{tabular}
@@ -282,19 +282,22 @@ a hard crop such digits touched the crop border and were lost.
 \textbf{OCR configuration.} Tesseract~5 is used through
 \texttt{pytesseract} with \texttt{--psm 10} (single character) and the
 whitelist \texttt{123456789}. Table~\ref{tab:ocr} compares the page
-segmentation modes. Modes 10 and 7 are best; modes 6, 8 and 13 are clearly
-worse on isolated digits.
+segmentation modes. Modes 10 and 7 are best; modes 6, 8 and 13 are
+worse on isolated digits, and the whitelist makes no measurable difference
+once the digit is isolated.
 
 \textbf{Cell preparation.} The digit mask is drawn in black on a white
-square whose side is 2.5 times the digit height, and resized to
-$40\times40$\,px. This removes line remnants, centres the digit and gives
-Tesseract the white border it needs. Feeding the raw grey cell instead
-lowers cell accuracy from 0.994 to 0.943. Larger pictures were worse: at
-$96\times96$ Tesseract returned an empty string for about one digit in ten.
+square whose side is 2.5 times the digit height, its strokes are thinned by
+one pixel, and the picture is resized to $40\times40$\,px. This removes line
+remnants, centres the digit and gives Tesseract the white border it needs.
+Feeding the raw grey cell instead lowers cell accuracy from 0.996 to 0.943.
+Two details mattered. Larger pictures were worse: at $96\times96$ Tesseract
+returned an empty string for about one digit in ten. Thinner strokes were
+better, because the blur before thresholding makes the mask slightly bold.
 Even with preparation, mode 10 occasionally returns nothing for a clear
-digit but almost never returns a wrong one. Since the cell is already known
-to be filled, an empty answer is retried with a padding of 2.0 and 3.0 and
-finally with mode 13.
+digit but rarely returns a wrong one. Since the cell is already known
+to be filled, an empty answer is retried with a padding of 2.0, 3.0 and 1.6
+and finally with mode 13.
 
 \begin{table}[t]
 \caption{OCR variants (development set, cell accuracy)}
@@ -305,12 +308,12 @@ finally with mode 13.
 Variant & Accuracy\\
 \midrule
 Prepared, psm 10 with retries (final) & 1.000\\
-Prepared, psm 10 & 0.994\\
-Prepared, psm 10, no whitelist & 0.995\\
-Prepared, psm 7 & 0.994\\
-Prepared, psm 13 & 0.931\\
-Prepared, psm 8 & 0.928\\
-Prepared, psm 6 & 0.915\\
+Prepared, psm 10 & 0.996\\
+Prepared, psm 10, no whitelist & 0.996\\
+Prepared, psm 7 & 0.996\\
+Prepared, psm 6 & 0.970\\
+Prepared, psm 13 & 0.935\\
+Prepared, psm 8 & 0.934\\
 Raw cells, psm 10 & 0.943\\
 \bottomrule
 \end{tabular}

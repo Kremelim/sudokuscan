@@ -59,6 +59,8 @@ def main():
     args = parser.parse_args()
 
     rows = evaluate(args.results, args.annotations)
+    if not rows:
+        raise SystemExit(f"no annotations found in {args.annotations}")
     print(f"{'image':<16}{'corner %':>9}{'cells':>8}  conditions")
     for r in rows:
         print(f"{r['name']:<16}{r['corner_err']:>9.2f}{r['cell_acc']:>8.3f}  {' '.join(r['conditions'])}")

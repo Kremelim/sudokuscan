@@ -5,7 +5,7 @@ once per printed puzzle. The corners are clicked by hand: first roughly on the
 whole photo, then precisely on a zoomed view, in the order TL, TR, BR, BL.
 
 Usage:
-    python tools/annotate.py --image data/personal/images/s123_01.jpg --grid data/personal/puzzles/puzzle1.txt --conditions C2 C4
+    python tools/annotate.py --image data/personal/images/photo.jpg --grid data/personal/puzzles/puzzle1.txt --conditions C2 C4
 """
 import argparse
 import json

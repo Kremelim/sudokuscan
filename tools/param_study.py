@@ -39,6 +39,8 @@ def main():
     for file in sorted(Path(args.annotations).glob("*.json")):
         truth = json.loads(file.read_text())
         data.append((cv2.imread(str(Path(args.images) / truth["image"])), truth["corners"]))
+    if not data:
+        sys.exit(f"no annotations found in {args.annotations}")
     print(f"{len(data)} images")
 
     figure, axes = plt.subplots(1, 4, figsize=(16, 3.5))
