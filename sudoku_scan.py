@@ -3,6 +3,10 @@
 Usage:
     python sudoku_scan.py --input photo.jpg --outdir out/
     python sudoku_scan.py --batch images_dir/ --outdir results/
+
+Bonus parts: B1 solver (solve), B2 solution drawn on the photograph
+(draw_solution), B3 homography from many grid intersections
+(multipoint_homography), B4 puzzles in any orientation (find_orientation).
 """
 import argparse
 import itertools
@@ -32,6 +36,14 @@ WHITELIST = " -c tessedit_char_whitelist=123456789"
 # (Tesseract options, padding) tried in this order until a digit is returned
 OCR_ATTEMPTS = [("--psm 10" + WHITELIST, pad) for pad in (2.5, 2.0, 3.0, 1.6)]
 OCR_ATTEMPTS.append(("--psm 13" + WHITELIST, 2.5))
+
+# Bonus parameters
+SQUARE = np.float32([[0, 0], [SIZE, 0], [SIZE, SIZE], [0, SIZE]])   # rectified corners
+SOLVE_SECONDS = 5.0           # B1: the solver gives up after this time
+AR_COLOUR = (0, 150, 0)       # B2: colour (BGR) of the digits drawn on the photograph
+TOLERANCE = 8                 # B3: a candidate this close (px) to a grid intersection belongs to it
+RANSAC_PX = 3.0               # B3: RANSAC inlier threshold in rectified pixels
+ORIENT_PAD = 1.3              # B4: digit spacing on the page used to score an orientation
 
 
 def odd(x):
@@ -217,6 +229,134 @@ def find_conflicts(grid):
     return sorted(conflicts)
 
 
+# ---------------------------------------------------------------- Bonus B1
+def solve(grid, limit=2, seconds=SOLVE_SECONDS):
+    """Backtracking solver. Returns (solutions, status).
+
+    The empty cell with the fewest candidates is filled first, its candidates
+    are tried in ascending order, and the search goes back when a cell has no
+    candidate left. The search does not stop at the first solution: it stops
+    at the second one, which proves that the solution is not unique.
+    status is "unique", "not_unique", "none" or "timeout"; solutions holds
+    the solutions found (at most limit), each as a 9x9 list."""
+    grid = [[int(d) for d in row] for row in grid]
+    if find_conflicts(np.array(grid)):
+        return [], "none"
+    deadline = time.perf_counter() + seconds
+    solutions = []
+
+    def candidates(r, c):
+        used = set(grid[r]) | {row[c] for row in grid}
+        used |= {grid[i][j] for i in range(r - r % 3, r - r % 3 + 3)
+                 for j in range(c - c % 3, c - c % 3 + 3)}
+        return [d for d in range(1, 10) if d not in used]
+
+    def search():
+        empty = [(r, c) for r in range(9) for c in range(9) if not grid[r][c]]
+        if not empty:
+            solutions.append([row[:] for row in grid])
+            return
+        r, c = min(empty, key=lambda cell: len(candidates(*cell)))
+        for digit in candidates(r, c):
+            if len(solutions) < limit and time.perf_counter() < deadline:
+                grid[r][c] = digit
+                search()
+        grid[r][c] = 0
+
+    search()
+    if len(solutions) < limit and time.perf_counter() >= deadline:
+        return solutions, "timeout"
+    return solutions, ("none", "unique", "not_unique")[min(len(solutions), 2)]
+
+
+# ---------------------------------------------------------------- Bonus B2
+def draw_solution(image, H4, grid, solution):
+    """Photograph with the solution written into its empty cells.
+
+    The missing digits are written at the cell centres of a blank
+    SIZE x SIZE canvas, the canvas is warped to the photograph with the
+    inverse of H4 and its pixels are copied onto the photograph."""
+    canvas = np.zeros((SIZE, SIZE), np.uint8)
+    font, size, thickness = cv2.FONT_HERSHEY_SIMPLEX, 1.1, 2
+    for r, c in zip(*np.nonzero(np.array(grid) == 0)):
+        text = str(solution[r][c])
+        (width, height), _ = cv2.getTextSize(text, font, size, thickness)
+        origin = (c * CELL + (CELL - width) // 2, r * CELL + (CELL + height) // 2)
+        cv2.putText(canvas, text, origin, font, size, 255, thickness, cv2.LINE_AA)
+    height, width = image.shape[:2]
+    mask = cv2.warpPerspective(canvas, np.linalg.inv(H4), (width, height))
+    picture = image.copy()
+    picture[mask > 127] = AR_COLOUR
+    return picture
+
+
+# ---------------------------------------------------------------- Bonus B3
+def multipoint_homography(image, candidates, corners, H4, scale):
+    """Homography HN estimated from many grid intersections instead of four
+    corners. Returns (HN, number of point pairs, number of RANSAC inliers).
+
+    The Harris candidates are moved to the rectified square with H4. A
+    candidate closer than TOLERANCE to a multiple of CELL in x and y belongs
+    to that grid intersection. Harris finds up to four candidates around one
+    line crossing (one in each cell corner), so the candidates of an
+    intersection are averaged and refined with cornerSubPix. Only the 64
+    inner intersections are used: on the outer border the candidates lie on
+    the inner edge of the thick line, which would shrink the grid. The border
+    is represented by the four detected corners, so HN is fitted to at most
+    68 point pairs with RANSAC."""
+    grey = preprocess(image)[0]
+    points = np.float32(candidates / scale)                 # original-image pixels
+    mapped = cv2.perspectiveTransform(points[None], H4)[0]
+    ideal = np.round(mapped / CELL) * CELL
+    near = ((np.linalg.norm(mapped - ideal, axis=1) < TOLERANCE)
+            & (ideal.min(axis=1) > 0) & (ideal.max(axis=1) < SIZE))
+    targets = np.unique(ideal[near], axis=0)
+    if len(targets) == 0:
+        return H4, 4, 4
+    found = np.float32([points[near & np.all(ideal == t, axis=1)].mean(axis=0) for t in targets])
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.01)
+    found = cv2.cornerSubPix(grey, found * scale, (5, 5), (-1, -1), criteria) / scale
+    src = np.vstack([found, np.float32(corners)])
+    dst = np.vstack([targets, SQUARE])
+    cv2.setRNGSeed(0)                                       # same result on every run
+    HN, inliers = cv2.findHomography(src, dst, cv2.RANSAC, RANSAC_PX)
+    if HN is None:
+        return H4, 4, 4
+    return HN, len(src), int(inliers.sum())
+
+
+# ---------------------------------------------------------------- Bonus B4
+def reading_confidence(rect):
+    """Mean Tesseract confidence (0-100) of the digits in a rectified image.
+
+    The digits found by find_digits are put next to each other, nine per
+    line, and this small page is read with one Tesseract call. Upright digits
+    are read with high confidence; rotated digits give no text or a low
+    confidence. One call per orientation is much cheaper than a full
+    read_grid, which calls Tesseract once per digit."""
+    grey = cv2.cvtColor(rect, cv2.COLOR_BGR2GRAY)
+    digits = find_digits(binarise(grey, odd(CELL / 2)))
+    if not digits:
+        return 0.0
+    pictures = [prepare_digit(digits[cell], ORIENT_PAD) for cell in sorted(digits)]
+    pictures += [np.full_like(pictures[0], 255)] * (-len(pictures) % 9)
+    page = np.vstack([np.hstack(pictures[i:i + 9]) for i in range(0, len(pictures), 9)])
+    page = cv2.copyMakeBorder(page, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
+    data = pytesseract.image_to_data(page, config="--psm 6" + WHITELIST,
+                                     output_type=pytesseract.Output.DICT)
+    confidences = [float(c) for c, text in zip(data["conf"], data["text"]) if text.strip()]
+    return float(np.mean(confidences)) if confidences else 0.0
+
+
+def find_orientation(rect):
+    """Number of 90 degree counter-clockwise turns (0-3) that make the
+    rectified puzzle upright, and the confidence of each of the four turns.
+    A tie keeps the image as it is."""
+    confidences = [reading_confidence(np.ascontiguousarray(np.rot90(rect, turns)))
+                   for turns in range(4)]
+    return int(np.argmax(confidences)), confidences
+
+
 # ---------------------------------------------------------------- Output
 def draw_harris(response, candidates, corners, scale):
     picture = cv2.normalize(np.maximum(response, 0) ** 0.25, None, 0, 255, cv2.NORM_MINMAX)
@@ -259,6 +399,10 @@ def process(path, outdir):
         cv2.imwrite(prefix + "_harris.png", draw_harris(response, candidates, corners, scale))
         if corners is not None:
             warped = rectify(image, corners)
+            turns, confidences = find_orientation(warped["rect_H4"])            # B4
+            if turns:       # make the first corner the top-left corner of the puzzle
+                corners = np.roll(corners, -turns, axis=0)
+                warped = rectify(image, corners)
             grid = read_grid(warped["rect_H4"])
             conflicts = find_conflicts(grid)
             for model in ("A3", "A4", "H4"):
@@ -268,7 +412,25 @@ def process(path, outdir):
             result.update(corners=corners.tolist(), grid=grid.tolist(),
                           a3_corner_err_px=warped["a3_corner_err_px"],
                           a4_rms_px=warped["a4_rms_px"],
-                          verdict="invalid" if conflicts else "valid")
+                          verdict="invalid" if conflicts else "valid",
+                          rotation_deg=90 * turns,
+                          orientation_confidence=[round(c, 1) for c in confidences])
+
+            HN, points, inliers = multipoint_homography(                         # B3
+                image, candidates, corners, warped["H4"], scale)
+            cv2.imwrite(prefix + "_rect_HN.png", cv2.warpPerspective(image, HN, (SIZE, SIZE)))
+            result.update(HN=HN.tolist(), hn_points=points, hn_inliers=inliers)
+
+            solver_start = time.perf_counter()                                   # B1
+            solutions, status = solve(grid)
+            solver_ms = (time.perf_counter() - solver_start) * 1000
+            result.update(solution_status=status, solver_ms=round(solver_ms, 2),
+                          solution=solutions[0] if solutions else None)
+            if status == "unique":                                               # B2
+                with open(prefix + "_solution.txt", "w") as f:
+                    f.write("\n".join("".join(map(str, row)) for row in solutions[0]) + "\n")
+                cv2.imwrite(prefix + "_ar.jpg",
+                            draw_solution(image, warped["H4"], grid, solutions[0]))
     except Exception as error:
         print(f"{path.name}: {error}")
     result["runtime_s"] = round(time.time() - start, 3)
@@ -294,7 +456,10 @@ def main():
                        if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
     for path in paths:
         result = process(path, args.outdir)
-        print(f"{path.name}: {result['verdict']} ({result['runtime_s']} s)")
+        solved = ""
+        if "solution_status" in result:
+            solved = f", solution {result['solution_status']} in {result['solver_ms']} ms"
+        print(f"{path.name}: {result['verdict']}{solved} ({result['runtime_s']} s)")
 
 
 if __name__ == "__main__":

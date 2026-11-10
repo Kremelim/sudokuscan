@@ -20,7 +20,9 @@ development images the mean corner error is 0.28\,\% of the puzzle side and
 all cells are correct. On my 10 photographs the corner error is 0.27\,\%,
 cell accuracy is 0.993 and 8 of the 10 grids are read without any error. The
 comparison of the three models shows that an affine map is only acceptable
-for near-frontal views.
+for near-frontal views. The four bonus parts (solver, solution drawn on the
+photograph, many-point homography and orientation detection) are described
+in Section~\ref{sec:bonus}.
 \end{abstract}
 
 \section{Introduction}
@@ -490,6 +492,70 @@ discarded by the region rule, and the component with the next best hole
 count was a piece of the title. The failing stage is region selection in
 Stage~2. The photograph was retaken with all four corners in the frame.
 
+\section{Bonus Parts}
+\label{sec:bonus}
+The four bonus parts are functions in \texttt{sudoku\_scan.py}. Their
+results, measured with \texttt{tools/bonus\_study.py}, are given in
+Table~\ref{tab:bonus}.
+
+\textbf{B1 Solver} (\texttt{solve}). The solver uses backtracking. The empty
+cell with the fewest candidates is filled first, its candidates are tried in
+ascending order, and the search goes back when a cell has no candidate left.
+The search does not stop at the first solution: a second solution proves
+that the solution is not unique. The answer is \emph{unique},
+\emph{not unique}, \emph{none} or \emph{timeout} (5\,s), and the time is
+measured with \texttt{time.perf\_counter}. Every correctly read grid has a
+unique solution that equals the solution of the annotated grid, found in
+40\,ms at most. The two personal grids with OCR errors are detected: the
+curled page with five missing digits is \emph{not unique}, and the grid with
+the misread 1 has \emph{none}.
+
+\textbf{B2 Solution on the photograph} (\texttt{draw\_solution}). The
+missing digits are written at the cell centres of a blank $450\times450$
+canvas. The canvas is warped to the size of the photograph with
+$H_4^{-1}$ (\texttt{np.linalg.inv}, \texttt{cv2.warpPerspective}) and used
+as a mask to paint the digits on the photograph
+(Fig.~\ref{fig:ar}). It is written only when the solution is unique.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\columnwidth]{personal/bonus_ar.jpg}
+\caption{B2: the solution (green) drawn on an oblique photograph.}
+\label{fig:ar}
+\end{figure}
+
+\textbf{B3 Many-point homography.} The function
+\texttt{multipoint\_homography} moves the Harris candidates to the
+rectified square with H4. A candidate
+within 8\,px of a multiple of 50 in $x$ and $y$ belongs to that grid
+intersection. Harris gives up to four candidates around one line crossing,
+so they are averaged and refined with \texttt{cv2.cornerSubPix}. The 64
+inner intersections and the four detected corners, at most 68 point pairs,
+are given to \texttt{cv2.findHomography} with RANSAC (threshold 3\,px). The
+intersections on the outer border are not used: their candidates lie on the
+inner edge of the thick line, and with them the line deviation was worse
+than with H4. The result, HN, lowers the mean line deviation from 2.49 to
+1.14\,px on my photographs. The gain is largest on the three booklet pages
+that do not lie flat (3.1, 4.0 and 10.3\,px with H4; 0.9, 1.0 and 3.5\,px
+with HN), because 68 points spread over the grid give a better average
+plane than four corners. Cell accuracy does not change, so the grid is
+still read from H4. On the curled page only 10 of 20 point pairs are
+inliers, which again shows that this page is not a plane.
+
+\textbf{B4 Any orientation} (\texttt{find\_orientation}). The H4 image is
+turned by 0$^\circ$, 90$^\circ$, 180$^\circ$ and 270$^\circ$. For each turn
+the digits found by the empty-cell criterion are placed on one small page,
+which is read with one \texttt{pytesseract.image\_to\_data} call, and the
+turn with the highest mean confidence is chosen. The corner list is then
+rolled so that it starts at the top-left corner of the puzzle. One call per
+turn costs about 0.4\,s per image, much less than four full recognitions.
+The confidence of the upright turn is 38--96, and that of every other turn
+is at most 24. For the test every photograph was also turned by 90$^\circ$,
+180$^\circ$ and 270$^\circ$ and processed again: the orientation was found
+in all 120 runs. A turned photograph can differ from the upright one in one
+to three cells, because the detected corners move by up to one pixel in the
+rectified image.
+
 \section{Conclusion and Limitations}
 The pipeline finds the puzzle from the structure of the grid itself (one
 component with 81 holes) and takes the corners from the Harris detector,
@@ -497,6 +563,31 @@ with a corner error below 0.6\,\% on every real photograph. A homography is
 necessary for anything but near-frontal views; the affine models degrade in
 proportion to the ratio of opposite side lengths, as the weak-perspective
 model predicts.
+
+\makeatletter\setlength{\@fptop}{0pt}\makeatother % a column with only this table starts at the top
+\begin{table}[!t]
+\caption{Bonus results}
+\label{tab:bonus}
+\centering
+\begin{tabular}{lrr}
+\toprule
+Measurement & Dev. & Personal\\
+\midrule
+B1 unique solution found & 20/20 & 8/10\\
+B1 equal to true solution & 20/20 & 8/8\\
+B1 time, mean / max (ms) & 10 / 39 & 6 / 24\\
+B3 line dev.\ H4 (px) & 1.01 & 2.49\\
+B3 line dev.\ HN (px) & 0.80 & 1.14\\
+B3 cell acc.\ H4 / HN & 1.000 / 1.000 & 0.993 / 0.991\\
+B3 point pairs / inliers & 66 / 65 & 62 / 56\\
+B4 orientation found & 80/80 & 40/40\\
+B4 cell acc.\ at 0$^\circ$ & 1.000 & 0.993\\
+B4 cell acc.\ at 90$^\circ$ & 0.999 & 0.990\\
+B4 cell acc.\ at 180$^\circ$ & 1.000 & 0.993\\
+B4 cell acc.\ at 270$^\circ$ & 1.000 & 0.986\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 Limitations: the region rule needs closed cells, a grid that does not touch
 other ink and a puzzle that is completely inside the frame; a single
