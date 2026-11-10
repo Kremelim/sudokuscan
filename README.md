@@ -39,7 +39,7 @@ For every input image `<name>` the output directory receives:
 | `<name>_debug.png` | H4 rectification with cell boundaries, recognised digits and conflicting cells (red) |
 
 The verdict is `valid`, `invalid` or `not_found`. The program runs on CPU and
-takes about 3 seconds per image.
+takes 3 to 4 seconds per image.
 
 ## Repository structure
 
@@ -62,6 +62,23 @@ report/
     figures/              figures produced by the tools
 ```
 
+## Pipeline
+
+```
+photo
+  -> preprocess         downscale to 1000 px, grey, blur, binarise      (Stage 1)
+  -> harris_candidates  Harris response, threshold, local maxima        (Stage 2)
+  -> find_region        puzzle = component with about 81 holes          (Stage 2)
+  -> select_corners     largest quadrilateral, TL TR BR BL, sub-pixel   (Stage 2)
+  -> rectify            A3, A4, H4 to 450x450, corner residuals         (Stage 3)
+  -> read_grid (H4)     find_digits -> prepare_digit -> ocr             (Stage 5)
+  -> find_conflicts     valid / invalid                                 (Stage 6)
+  -> output files
+```
+
+Stage 4 (affine versus homography) is the analysis in
+`tools/compare_models.py`; it uses the same functions.
+
 ## Method
 
 | Stage | Function | What it does |
@@ -74,6 +91,21 @@ report/
 | 5 | `find_digits` | Empty-cell criterion: a cell is filled when a connected component smaller than a cell and at least 30 % of its height is centred inside the cell's inner region (7 px margin). |
 | 5 | `prepare_digit`, `ocr` | The digit mask is centred on a white square, its strokes are thinned by one pixel, and it is given to Tesseract (`--psm 10`, whitelist 1-9). An empty answer is retried with other paddings. |
 | 6 | `find_conflicts` | Repeated digits in a row, column or 3x3 box. |
+
+## Code map
+
+| Topic | Where | Notes |
+|---|---|---|
+| Harris parameters | `sudoku_scan.py`: `BLOCK_SIZE`, `KSIZE`, `K`, `THRESHOLD` | 5, 3, 0.04, 0.05; used in `harris_candidates` |
+| Harris parameter study | `tools/param_study.py`: `VALUES` | blockSize 2-13, ksize 3-7, k 0.02-0.20, threshold 0.01-0.6 |
+| Corner selection rule | `sudoku_scan.py`: `find_region`, `select_corners`, `detect_corners` | region by hole count, then largest quadrilateral of Harris candidates |
+| A3, A4, H4 and residuals | `sudoku_scan.py`: `rectify` | `getAffineTransform`, `estimateAffine2D`, `getPerspectiveTransform` |
+| Affine versus homography | `tools/compare_models.py`: `obliqueness`, `line_deviation` | plus cell accuracy of each rectification |
+| OCR preprocessing | `sudoku_scan.py`: `binarise`, `find_digits`, `prepare_digit` | empty-cell criterion and digit preparation |
+| OCR engine | `sudoku_scan.py`: `ocr`, `read_grid`, `OCR_ATTEMPTS` | Tesseract 5 through `pytesseract` |
+| OCR variants and confusions | `tools/ocr_study.py`: `VARIANTS` | preparation on/off, page segmentation modes |
+| Metrics | `tools/evaluate.py`: `corner_error`, `evaluate`, `summary` | corner error, cell accuracy, empty-cell F1, exact match, robustness |
+| Validity check | `sudoku_scan.py`: `find_conflicts` | row, column and box conflicts |
 
 ## Evaluation and analysis
 
@@ -99,5 +131,17 @@ Replace `devset` with `personal` for the personal dataset.
 | C4 uneven light | 6 | 0.27 | 1.000 | 1.000 | 1.00 | 1.00 |
 | C5 clutter | 6 | 0.31 | 1.000 | 1.000 | 1.00 | 1.00 |
 
-The development images are synthetic; results on real photographs are in the
-report.
+## Results on the personal dataset
+
+Ten phone photographs of three printed puzzles (`data/personal`).
+
+| Group | Images | Corner error (% of side) | Cell accuracy | Empty-cell F1 | Exact match | Robustness |
+|---|---|---|---|---|---|---|
+| all | 10 | 0.27 | 0.993 | 0.995 | 0.80 | 1.00 |
+| C1 near-frontal | 2 | 0.16 | 1.000 | 1.000 | 1.00 | 1.00 |
+| C2 oblique | 5 | 0.29 | 0.988 | 0.990 | 0.80 | 1.00 |
+| C3 rotated | 2 | 0.19 | 0.994 | 1.000 | 0.50 | 1.00 |
+| C4 uneven light | 4 | 0.25 | 0.997 | 1.000 | 0.75 | 1.00 |
+| C5 clutter | 3 | 0.32 | 1.000 | 1.000 | 1.00 | 1.00 |
+
+The analysis of these results is in `report/report.tex`.

@@ -2,16 +2,13 @@
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{booktabs}
-\usepackage{xcolor}
+\usepackage{array}
 \graphicspath{{figures/}}
-
-% Marks text that still has to be filled in from the personal dataset.
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 
 \begin{document}
 
 \title{SudokuScan: From a Photograph of a Printed Puzzle\\to a Digital $9\times 9$ Grid}
-\author{\todo{Name Surname, student number}\\COMP 482 Computer Vision, Project 1}
+\author{Kerem Ata\c{c}, 042201043\\COMP 482 Computer Vision, Project 1}
 \maketitle
 
 \begin{abstract}
@@ -20,16 +17,17 @@ phone photograph. The four outer corners of the grid are found with the
 Harris detector, the puzzle is rectified with two affine models and a
 homography, and the printed digits are read with Tesseract. On the 20
 development images the mean corner error is 0.28\,\% of the puzzle side and
-all 81 cells are correct in every image. \todo{one sentence with the same
-numbers on the personal dataset}. The comparison of the three models shows
-that an affine map is only acceptable for near-frontal views.
+all cells are correct. On my 10 photographs the corner error is 0.27\,\%,
+cell accuracy is 0.993 and 8 of the 10 grids are read without any error. The
+comparison of the three models shows that an affine map is only acceptable
+for near-frontal views.
 \end{abstract}
 
 \section{Introduction}
 A sheet of paper is a plane, so its image under a pinhole camera is related
 to the flat puzzle by a homography. The task is to undo this mapping
 automatically and read the 81 cells. The difficulties are (i) finding the
-four outer corners among hundreds of corner-like points produced by grid
+four outer corners among thousands of corner-like points produced by grid
 intersections, digits and surrounding text, (ii) uneven lighting and
 (iii) an OCR engine that is designed for lines of text, not single digits.
 
@@ -37,8 +35,34 @@ The pipeline has six stages, each a separate function in
 \texttt{sudoku\_scan.py}: preprocessing, Harris corner detection with
 automatic corner selection, rectification with three models (A3, A4, H4),
 their comparison, cell extraction with digit recognition, and a validity
-check. It uses only OpenCV, NumPy and Tesseract, and takes about 3\,s per
-image on a CPU.
+check (Table~\ref{tab:pipeline}). It uses only OpenCV, NumPy and Tesseract.
+
+
+The personal dataset has 10 photographs of 3 printed puzzles (KrazyDad, Web
+Sudoku and a newspaper puzzle booklet), covering C1 twice, C2 five times, C3
+twice, C4 four times and C5 three times. The puzzle side is between 1330 and
+2030\,px. Corners were annotated by clicking on a zoomed view of each
+photograph; the grids were typed once per puzzle.
+
+\begin{table}[t]
+\caption{Pipeline overview}
+\label{tab:pipeline}
+\centering
+\footnotesize
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.34\columnwidth}>{\raggedright\arraybackslash}p{0.46\columnwidth}@{}}
+\toprule
+Stage & Function & Method\\
+\midrule
+1 & \texttt{preprocess} \texttt{binarise} & downscale to 1000\,px, grey, $3\times3$ Gaussian blur, ratio threshold against a closing\\
+2 & \texttt{harris\_candidates} & \texttt{cornerHarris}, relative threshold, non-maximum suppression\\
+2 & \texttt{find\_region} \texttt{select\_corners} & component with about 81 holes, largest quadrilateral of candidates, \texttt{cornerSubPix}\\
+3 & \texttt{rectify} & A3, A4 and H4 to $450\times450$, corner residuals\\
+4 & \texttt{compare\_models.py} & residuals, line deviation and cell accuracy against obliqueness\\
+5 & \texttt{find\_digits} \texttt{prepare\_digit} \texttt{ocr} & empty-cell rule on connected components, Tesseract \texttt{--psm 10}\\
+6 & \texttt{find\_conflicts} & repeated digits in a row, column or box\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Corner Detection}
 \subsection{Preprocessing}
@@ -91,65 +115,75 @@ coordinates come from the Harris detector.
 \subsection{Parameter study}
 One parameter was varied at a time around the chosen values
 (\texttt{blockSize}\,=\,5, \texttt{ksize}\,=\,3, $k$\,=\,0.04,
-threshold\,=\,0.05). Table~\ref{tab:params} and Fig.~\ref{fig:params} show
-the mean number of candidates and the mean corner error on the 20
-development images. \todo{repeat on at least 6 personal images with
-\texttt{tools/param\_study.py} and report those numbers}.
+threshold\,=\,0.05) on all 10 personal photographs
+(Table~\ref{tab:params}, Fig.~\ref{fig:params}). A failure is an image
+with no puzzle found or a corner error above 5\,\%.
 
 \begin{table}[t]
-\caption{Harris parameter study (development set, 20 images)}
+\caption{Harris parameter study (personal dataset, 10 images)}
 \label{tab:params}
 \centering
 \begin{tabular}{llrrr}
 \toprule
 Parameter & Value & Candidates & Error (\%) & Failures\\
 \midrule
-blockSize & 2 & 2624 & 0.46 & 0\\
-          & 3 & 2462 & 0.28 & 0\\
-          & \textbf{5} & 2128 & 0.28 & 0\\
-          & 7 & 1859 & 0.28 & 0\\
-          & 13 & 2697 & 0.63 & 0\\
-ksize     & \textbf{3} & 2128 & 0.28 & 0\\
-          & 5 & 1455 & 0.28 & 0\\
-          & 7 & 1393 & 0.28 & 0\\
-$k$       & 0.02 & 2988 & 0.28 & 0\\
-          & \textbf{0.04} & 2128 & 0.28 & 0\\
-          & 0.10 & 1558 & 0.28 & 0\\
-          & 0.20 & 1221 & 1.24 & 0\\
-threshold & 0.01 & 3426 & 0.28 & 0\\
-          & \textbf{0.05} & 2128 & 0.28 & 0\\
-          & 0.20 & 1276 & 0.30 & 0\\
-          & 0.40 & 793 & 4.65 & 8\\
-          & 0.60 & 200 & 21.72 & 20\\
+blockSize & 2 & 2380 & 0.33 & 0\\
+          & 3 & 2458 & 0.27 & 0\\
+          & \textbf{5} & 2033 & 0.27 & 0\\
+          & 7 & 1994 & 0.24 & 0\\
+          & 9 & 1982 & 0.24 & 0\\
+          & 13 & 2458 & 0.34 & 0\\
+ksize     & \textbf{3} & 2033 & 0.27 & 0\\
+          & 5 & 1578 & 0.27 & 0\\
+          & 7 & 1537 & 0.27 & 0\\
+$k$       & 0.02 & 2731 & 0.27 & 0\\
+          & \textbf{0.04} & 2033 & 0.27 & 0\\
+          & 0.06 & 1863 & 0.27 & 0\\
+          & 0.10 & 1647 & 0.46 & 0\\
+          & 0.15 & 1533 & 0.51 & 0\\
+          & 0.20 & 1401 & 1.63 & 1\\
+threshold & 0.01 & 3510 & 0.27 & 0\\
+          & \textbf{0.05} & 2033 & 0.27 & 0\\
+          & 0.10 & 1695 & 0.27 & 0\\
+          & 0.20 & 1439 & 0.51 & 0\\
+          & 0.40 & 879 & 8.04 & 7\\
+          & 0.60 & 225 & 23.77 & 10\\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{devset/param_study.png}
+\includegraphics[width=\textwidth]{personal/param_study.png}
 \caption{Number of candidates (blue) and corner error (red, log scale) for
-each Harris parameter on the development set. The grey line is the chosen
+each Harris parameter on the personal dataset. The grey line is the chosen
 value.}
 \label{fig:params}
 \end{figure*}
 
 The corner error is flat over a wide range, because the selection rule only
 needs the four outer corners to be among the candidates. A small
-\texttt{blockSize} (2) gives a noisy response, and a large one (13) blurs it
-and shifts the peak away from the true corner. A large $k$ penalises
-edge-like structure more strongly and starts to remove the outer corners at
-$k = 0.2$. The threshold is the most sensitive parameter: above 0.2 the
-outer corners themselves are rejected and the rule fails. The chosen values
-lie in the middle of the flat range; the low threshold keeps a safety margin
-for photographs with weaker corners.
+\texttt{blockSize} (2) gives a noisy response and a large one (13) blurs it
+and shifts the peak away from the true corner. Sizes 7 and 9 are 0.03\,\%
+better than 5 on these photographs, which is below the precision of the
+hand-clicked ground truth, and on the development set 9 is slightly worse
+than 5, so 5 was kept. \texttt{ksize} changes the number of candidates but
+not the error. A larger $k$ penalises edge-like structure more strongly; on
+real photographs the error already rises at $k=0.1$ and one image fails at
+$k=0.2$. The threshold is the most sensitive parameter: from 0.2 the outer
+corners themselves start to be rejected, and at 0.4 seven of ten images
+fail. The chosen values lie inside the flat range of every parameter, and
+the development set (20 images) shows the same pattern with a flat error of
+0.28\,\%.
 
 \subsection{Cases the rule fails on}
-The rule assumes that the grid is one connected component with closed cells
-and that nothing else is attached to it. It fails when an object or text
-touches the outer border in the binary image, when the grid lines are too
-faint to close the cells, and when the puzzle is cut by the image border.
-\todo{add the failures observed on the personal dataset}.
+The rule assumes that the grid is one connected component with closed cells,
+that nothing else is attached to it and that it does not touch the image
+border. On the 10 final photographs it never selected a wrong corner. The
+first version of the rotated photograph did fail: one corner of the grid was
+outside the frame, the grid component was discarded because it touched the
+border, and a piece of the title text was selected instead
+(Section~\ref{sec:failures}). That photograph was retaken.
 
 \section{Rectification}
 The four corners are mapped to a $450\times450$ square (50\,px per cell)
@@ -176,16 +210,37 @@ the position, which models perspective foreshortening.
 An affine map preserves parallelism: it turns a square into a parallelogram
 and can model rotation, scale and shear but no vanishing point. A homography
 maps lines to lines without preserving parallelism, so it can represent any
-view of a plane. On the development set H4 maps the four corners onto the
+view of a plane. On the personal dataset H4 maps the four corners onto the
 target square with a maximum error below $10^{-4}$\,px, while the A3
-fourth-corner error ranges from 16 to 262\,px and the A4 RMS residual from 4
-to 55\,px.
+fourth-corner error ranges from 13 to 295\,px and the A4 RMS residual from 3
+to 56\,px. Table~\ref{tab:a3br} lists, for each photograph, where A3 sends
+the corner it does not use; the positions are computed from the A3 matrix
+and the corners stored in the result files.
+
+\begin{table}[t]
+\caption{Where A3 sends the unused corner BR, in pixels (ideal: 450, 450), by obliqueness}
+\label{tab:a3br}
+\centering
+\begin{tabular}{rrr@{\hskip 1.5em}rrr}
+\toprule
+Obl. & Lands at & Dist. & Obl. & Lands at & Dist.\\
+\midrule
+1.02 & (443, 461) & 12.8 & 1.20 & (555, 532) & 133.5\\
+1.03 & (463, 453) & 13.4 & 1.29 & (610, 350) & 188.4\\
+1.06 & (476, 447) & 25.8 & 1.41 & (635, 443) & 185.0\\
+1.11 & (499, 425) & 55.1 & 1.43 & (642, 449) & 192.3\\
+1.12 & (402, 451) & 48.2 & 1.68 & (742, 411) & 294.9\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Affine versus Homography}
 \textbf{Obliqueness.} Obliqueness is defined as the largest ratio between
 the lengths of opposite sides of the detected quadrilateral. It is exactly 1
 for every parallelogram, so it ignores in-plane rotation and measures only
-the perspective part of the distortion.
+the perspective part of the distortion. The rotated photographs confirm
+this: they are rotated by 17$^\circ$ and 21$^\circ$ but have an obliqueness
+of only 1.11 and 1.02.
 
 \textbf{Measures.} (1) The A3 fourth-corner error and the A4 RMS residual.
 (2) Grid line deviation: the rectified image is binarised and projected onto
@@ -194,73 +249,79 @@ strongest peak of the profile is located, and the mean distance to the ideal
 position is reported. (3) Cell accuracy of the same recognition stage on
 each rectification.
 
-\textbf{Results.} Fig.~\ref{fig:models} shows the three measures on the
-development set and Table~\ref{tab:models} summarises them.
-\todo{replace or complement with the personal dataset (at least 8 images):
-run \texttt{tools/compare\_models.py}, include
-\texttt{personal/model\_comparison.png} and \texttt{personal/most\_oblique.png}.}
+\textbf{Results.} Fig.~\ref{fig:models} shows the three measures for the 10
+personal photographs and Table~\ref{tab:models} summarises them in three
+groups.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{devset/model_comparison.png}
+\includegraphics[width=\textwidth]{personal/model_comparison.png}
 \caption{Corner residuals, grid line deviation and cell accuracy against
-obliqueness (development set).}
+obliqueness (personal dataset).}
 \label{fig:models}
 \end{figure*}
 
 \begin{table}[t]
-\caption{Affine versus homography by obliqueness (development set)}
+\caption{Affine versus homography by obliqueness (personal dataset)}
 \label{tab:models}
 \centering
 \begin{tabular}{lrrr}
 \toprule
-Obliqueness & $\le 1.07$ & 1.10--1.18 & $\ge 1.29$\\
-Images & 5 & 6 & 9\\
+Obliqueness & 1.02--1.06 & 1.11--1.20 & 1.29--1.68\\
+Images & 3 & 3 & 4\\
 \midrule
-A3 error (px) & 16--39 & 47--85 & 112--262\\
-A4 RMS (px) & 4--10 & 13--20 & 29--55\\
-Line dev.\ A3 (px) & 2.7--10.8 & 7.6--14.5 & 9.9--14.3\\
-Line dev.\ A4 (px) & 1.8--8.8 & 8.7--11.1 & 9.4--16.7\\
-Line dev.\ H4 (px) & 0.5--1.3 & 0.6--0.9 & 0.5--6.2\\
-Cell acc.\ A3 & 0.98--1.00 & 0.77--0.91 & 0.54--0.81\\
-Cell acc.\ A4 & 1.00 & 0.96--1.00 & 0.51--0.78\\
-Cell acc.\ H4 & 1.00 & 1.00 & 1.00\\
+A3 error (px) & 13--26 & 48--134 & 185--295\\
+A4 RMS (px) & 3--6 & 13--27 & 38--56\\
+Line dev.\ A3 (px) & 2.7--7.7 & 8.6--12.1 & 11.9--14.7\\
+Line dev.\ A4 (px) & 1.3--5.1 & 5.5--15.6 & 11.2--17.8\\
+Line dev.\ H4 (px) & 0.4--3.1 & 0.6--1.8 & 1.0--10.3\\
+Cell acc.\ A3 & 0.91--1.00 & 0.85--0.86 & 0.52--0.63\\
+Cell acc.\ A4 & 0.98--1.00 & 0.77--1.00 & 0.43--0.63\\
+Cell acc.\ H4 & 0.99--1.00 & 1.00 & 0.94--1.00\\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{devset/most_oblique.png}
-\caption{A3, A4 and H4 rectifications of the most oblique development
-image. \todo{replace with the most oblique personal image}.}
+\includegraphics[width=\columnwidth]{personal/most_oblique.png}
+\caption{A3, A4 and H4 rectifications of the most oblique personal
+photograph (obliqueness 1.68).}
 \label{fig:oblique}
 \end{figure}
 
-Both residuals grow steadily with obliqueness. The A3 error is about three to five
-times the A4 residual, because A3 puts the whole misfit on one corner. With
-H4 the grid lines stay within about 1\,px of their ideal positions at every
-angle; the single exception (6.2\,px) is an image with a curled page, which
-no $3\times3$ transformation can flatten. With the affine models the lines
-are already several pixels off at a ratio of 1.05, and recognition breaks
-down once the ratio exceeds about 1.2.
+Both residuals grow steadily with obliqueness. The A3 error is about four to five
+times the A4 residual, because A3 puts the whole misfit on
+one corner while A4 spreads it over four. With the affine models the grid
+lines are several pixels off already at an obliqueness of 1.06, and from
+1.2 the deviation saturates at 11--18\,px, which means that the profile
+peaks no longer correspond to the right lines. With H4 the lines stay within
+about 2\,px for seven photographs. The three exceptions (3.1, 4.0 and
+10.3\,px) are all photographs of the newspaper booklet, whose pages do not
+lie flat; a curved page is not a plane and no $3\times3$ transformation can
+flatten it.
+
+Cell accuracy follows the same order. At 1.02--1.03 all three models read
+the grid equally well. At 1.06 A3 already loses seven cells and A4 two. At
+1.11--1.12 A4 still loses at most two cells while A3 drops to 0.85. At 1.20
+A4 falls to 0.77, and above 1.29 both affine models are between 0.43 and
+0.63 while H4 remains at 1.00 on every flat page. The single H4 error at
+1.02 is an OCR confusion, not a geometric one.
 
 \textbf{Conclusion.} An affine model is an acceptable approximation only for
-near-frontal views: up to an obliqueness of about 1.07 A4 still gave every
-cell correctly, and up to about 1.18 it lost at most a few cells. A3 is
-worse than A4 at small angles because its error is concentrated at one
-corner. This agrees with the weak-perspective camera model. Perspective
-projection divides by the depth $Z$; when the depth variation $\Delta Z$
-across the object is small compared with its mean distance $\bar Z$, all
-points are divided by nearly the same number and the projection of a plane
-becomes affine. For a page of side $s$ tilted by $\theta$ at distance
-$\bar Z$, $\Delta Z = s\sin\theta$, and the far side appears shorter than
-the near side by the factor
+near-frontal views: A3 up to an obliqueness of about 1.03 and A4 up to about
+1.1. The development set agrees (A4 reads every cell up to 1.07 and falls to
+0.51--0.78 above 1.29). This is what the weak-perspective camera model
+predicts. Perspective projection divides by the depth $Z$; when the depth
+variation $\Delta Z$ across the object is small compared with its mean
+distance $\bar Z$, all points are divided by nearly the same number and the
+projection of a plane becomes affine. For a page of side $s$ tilted by
+$\theta$ at distance $\bar Z$, $\Delta Z = s\sin\theta$, and the far side
+appears shorter than the near side by the factor
 $(\bar Z + \tfrac{1}{2}\Delta Z)/(\bar Z - \tfrac{1}{2}\Delta Z)$, which is
-the obliqueness measured here. A phone held 30\,cm above a 15\,cm puzzle
-violates $\Delta Z \ll \bar Z$ as soon as the page is tilted noticeably, so
-a homography is required. \todo{confirm or adjust these limits with the
-personal measurements}.
+the obliqueness measured here. A phone held about 30\,cm above a 15\,cm
+puzzle violates $\Delta Z \ll \bar Z$ as soon as the page is tilted
+noticeably, so a homography is required.
 
 \section{Recognition}
 \textbf{Cells and margin.} The H4 image is divided into 81 equal
@@ -277,52 +338,87 @@ has its centre inside the inner region of that cell. All other cells are
 empty and are never passed to the OCR engine. Grid lines are either larger
 than a cell or centred in the margin. Using the component instead of a hard
 crop keeps a digit complete when the rectification is a few pixels off; with
-a hard crop such digits touched the crop border and were lost.
+a hard crop such digits touched the crop border and were lost. The
+empty-cell F1 score is 1.000 on the development set and 0.995 on the
+personal dataset. All five filled cells reported as empty are in the
+photograph of the curled page: three are rejected by this criterion and two
+are found but not read by Tesseract.
 
 \textbf{OCR configuration.} Tesseract~5 is used through
 \texttt{pytesseract} with \texttt{--psm 10} (single character) and the
 whitelist \texttt{123456789}. Table~\ref{tab:ocr} compares the page
-segmentation modes. Modes 10 and 7 are best; modes 6, 8 and 13 are
-worse on isolated digits, and the whitelist makes no measurable difference
-once the digit is isolated.
+segmentation modes. Modes 10 and 7 are best on both datasets; modes 6, 8 and
+13 are worse on isolated digits, and the whitelist makes no measurable
+difference once the digit is isolated.
 
 \textbf{Cell preparation.} The digit mask is drawn in black on a white
 square whose side is 2.5 times the digit height, its strokes are thinned by
 one pixel, and the picture is resized to $40\times40$\,px. This removes line
 remnants, centres the digit and gives Tesseract the white border it needs.
-Feeding the raw grey cell instead lowers cell accuracy from 0.996 to 0.943.
-Two details mattered. Larger pictures were worse: at $96\times96$ Tesseract
+Feeding the raw grey cell instead lowers cell accuracy from 0.996 to 0.943
+on the development set and from 0.983 to 0.923 on my photographs. Two
+details mattered. Larger pictures were worse: at $96\times96$ Tesseract
 returned an empty string for about one digit in ten. Thinner strokes were
 better, because the blur before thresholding makes the mask slightly bold.
 Even with preparation, mode 10 occasionally returns nothing for a clear
 digit but rarely returns a wrong one. Since the cell is already known
 to be filled, an empty answer is retried with a padding of 2.0, 3.0 and 1.6
-and finally with mode 13.
+and finally with mode 13; this raises accuracy to 1.000 and 0.993.
 
 \begin{table}[t]
-\caption{OCR variants (development set, cell accuracy)}
+\caption{OCR variants (cell accuracy)}
 \label{tab:ocr}
 \centering
-\begin{tabular}{lr}
+\begin{tabular}{lrr}
 \toprule
-Variant & Accuracy\\
+Variant & Dev. & Personal\\
 \midrule
-Prepared, psm 10 with retries (final) & 1.000\\
-Prepared, psm 10 & 0.996\\
-Prepared, psm 10, no whitelist & 0.996\\
-Prepared, psm 7 & 0.996\\
-Prepared, psm 6 & 0.970\\
-Prepared, psm 13 & 0.935\\
-Prepared, psm 8 & 0.934\\
-Raw cells, psm 10 & 0.943\\
+Prepared, psm 10 with retries (final) & 1.000 & 0.993\\
+Prepared, psm 10 & 0.996 & 0.983\\
+Prepared, psm 10, no whitelist & 0.996 & 0.984\\
+Prepared, psm 7 & 0.996 & 0.983\\
+Prepared, psm 6 & 0.970 & 0.931\\
+Prepared, psm 13 & 0.935 & 0.900\\
+Prepared, psm 8 & 0.934 & 0.893\\
+Raw cells, psm 10 & 0.943 & 0.923\\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[height=0.3\textwidth]{personal/failures/IMG_20261109_235720_debug.png}\hfill
+\includegraphics[height=0.3\textwidth]{personal/failures/IMG_20261110_013714_debug.png}\hfill
+\includegraphics[height=0.3\textwidth]{personal/failures/cutoff_harris.png}
+\caption{Failure cases. Left: curled page after H4, with printed lines far
+from the ideal green grid. Centre: a 1 read as 4, with the conflicting cells
+marked in red. Right: Harris output for a puzzle cut by the image border;
+the selected corners (red) lie on the title text.}
+\label{fig:failures}
+\end{figure*}
+
 \textbf{Confusions.} The final configuration makes no error on the
-development set. \todo{list the most frequent confusions on the personal
-dataset from \texttt{tools/ocr\_study.py}, with example crops from
-\texttt{figures/personal/confusions/}}.
+development set and six errors in the 810 cells of the personal dataset.
+Five are filled cells reported as empty, all in the photograph of the
+curled page. Three of them (1, 2 and 7) are displaced by the curl until
+their centre lies on a grid line, so the empty-cell criterion rejects them.
+The other two (5 and 6) are found, but Tesseract returns nothing in all five
+attempts. The only true confusion is a sans-serif 1 read as 4
+(Fig.~\ref{fig:confusions}). Tesseract answers 4 for this digit at a
+padding of 2.5 and 1 at the three other paddings; the pipeline keeps the
+first non-empty answer, so a majority vote over the paddings would have
+corrected it.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.22\columnwidth]{personal/confusions/true1_read4_IMG_20261110_013714_r6c6.png}\hfill
+\includegraphics[width=0.22\columnwidth]{personal/confusions/true7_read0_IMG_20261109_235720_r4c5.png}\hfill
+\includegraphics[width=0.22\columnwidth]{personal/confusions/true6_read0_IMG_20261109_235720_r0c8.png}\hfill
+\includegraphics[width=0.22\columnwidth]{personal/confusions/true2_read0_IMG_20261109_235720_r3c7.png}
+\caption{Misread cells. From left: 1 read as 4; then 7, 6 and 2 reported as
+empty on the curled page.}
+\label{fig:confusions}
+\end{figure}
 
 \section{Results}
 Table~\ref{tab:results} gives the metrics of Section~7 of the assignment,
@@ -344,45 +440,95 @@ C3  & 4  & 0.31 & 1.000 & 1.000 & 1.00\\
 C4  & 6  & 0.27 & 1.000 & 1.000 & 1.00\\
 C5  & 6  & 0.31 & 1.000 & 1.000 & 1.00\\
 \midrule
-\multicolumn{6}{l}{\emph{Personal dataset} \todo{fill in}}\\
-All &  &  &  &  & \\
-C1  &  &  &  &  & \\
-C2  &  &  &  &  & \\
-C3  &  &  &  &  & \\
-C4  &  &  &  &  & \\
-C5  &  &  &  &  & \\
+\multicolumn{6}{l}{\emph{Personal dataset}}\\
+All & 10 & 0.27 & 0.993 & 0.995 & 0.80\\
+C1  & 2  & 0.16 & 1.000 & 1.000 & 1.00\\
+C2  & 5  & 0.29 & 0.988 & 0.990 & 0.80\\
+C3  & 2  & 0.19 & 0.994 & 1.000 & 0.50\\
+C4  & 4  & 0.25 & 0.997 & 1.000 & 0.75\\
+C5  & 3  & 0.32 & 1.000 & 1.000 & 1.00\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Robustness is 1.00 on the development set: every image was processed
-without a crash in about 3\,s. The development images are synthetic, so
-these numbers are an upper bound for real photographs.
+Robustness is 1.00 on both sets: every image was processed without a crash,
+in 2.7 to 4.3\,s on a CPU. The corner error is the same on real and
+synthetic images. The largest value on my photographs is 0.52\,\%, on a
+photograph with a pen lying next to the grid. No error can be attributed to clutter or
+shadow: the errors come from the curled page (a C2 image) and from one OCR
+confusion (in an image labelled C3 and C4).
 
 \section{Failure Analysis}
-\todo{At least four failure cases from the personal dataset. For each one:
-the \texttt{\_harris.png} or \texttt{\_debug.png} image, which stage failed
-and why.} Two cases can be taken from the experiments above:
+\label{sec:failures}
+Six of the 810 cells of the personal dataset are wrong, five of them in
+one photograph. Fig.~\ref{fig:failures} shows the cases.
 
-\emph{Affine rectification of an oblique view} (Fig.~\ref{fig:oblique}). The
-failing stage is rectification: A3 and A4 leave converging grid lines, the
-digits fall into the wrong cells and cell accuracy drops to 0.54.
 
-\emph{Curled page} (development image 20). The corners are correct (0.24\,\%)
-but the grid lines deviate by 6.2\,px after H4, because a curved surface is
-not a plane. The cells were still read correctly only because the digit
-components are assigned by their centre.
+\emph{1. Curled page} (C2, Fig.~\ref{fig:failures} left). The corners are
+correct (0.41\,\%), but the booklet page is curved, so the grid lines
+deviate by 10.3\,px after H4 and whole rows are shifted by up to half a
+cell. Three digits end up centred on a grid line and are rejected as empty, and
+two more are located but not read (cell accuracy 0.938). The failing assumption is
+planarity in Stage~3; more than four points and a non-planar model would be
+needed.
+
+\emph{2. Digit confusion} (C3, Fig.~\ref{fig:failures} centre). Geometry is
+correct (0.20\,\%), but one 1 is read as 4. The validity check catches it:
+the grid then contains two 4s in one row, the verdict is \emph{invalid} and
+both cells are marked. The failing stage is recognition.
+
+\emph{3. Affine rectification of oblique views} (Fig.~\ref{fig:oblique}).
+With A3 or A4 the grid lines converge, digits fall into the wrong cells, and
+cell accuracy is 0.43--0.63 for the four most oblique photographs, although
+the corners and the OCR stage are the same as for H4. The failing stage is
+the choice of model in Stage~3.
+
+\emph{4. Puzzle cut by the image border} (Fig.~\ref{fig:failures} right).
+In the first version of the rotated photograph one corner of the grid was
+outside the frame. The grid component touched the image border and was
+discarded by the region rule, and the component with the next best hole
+count was a piece of the title. The failing stage is region selection in
+Stage~2. The photograph was retaken with all four corners in the frame.
 
 \section{Conclusion and Limitations}
 The pipeline finds the puzzle from the structure of the grid itself (one
-component with 81 holes) and takes the corners from the Harris detector. A
-homography is necessary for anything but near-frontal views; the affine
-models degrade in proportion to the ratio of opposite side lengths.
+component with 81 holes) and takes the corners from the Harris detector,
+with a corner error below 0.6\,\% on every real photograph. A homography is
+necessary for anything but near-frontal views; the affine models degrade in
+proportion to the ratio of opposite side lengths, as the weak-perspective
+model predicts.
 
-Limitations: the region rule needs closed cells and a grid that does not
-touch other ink; a single homography cannot correct a curled page; a digit
-that touches a grid line is merged with it and lost; and the fixed 85\,\%
-ink threshold was tuned on synthetic images. \todo{adjust after the
-personal dataset results}.
+Limitations: the region rule needs closed cells, a grid that does not touch
+other ink and a puzzle that is completely inside the frame; a single
+homography cannot correct a curled page; a digit that touches a grid line is
+merged with it and lost; and Tesseract in single-character mode still
+confuses some sans-serif digits. Ten photographs are a small sample, so the
+limits given for the affine models are indicative only.
+
+\clearpage
+\onecolumn
+\appendix[AI-Use Disclosure]
+
+\begin{center}
+\renewcommand{\arraystretch}{2.6}
+\begin{tabular}{|p{0.13\textwidth}|p{0.20\textwidth}|p{0.28\textwidth}|p{0.28\textwidth}|}
+\hline
+Tool & Purpose / stage & What you asked (summary) & What you kept, changed or rejected\\
+\hline
+Microsoft Copilot & Concept learning, writing & Harris, homography, OCR, report review & Used explanations only; implementation, Stage~2, and Stage~4 completed independently.\\
+\hline
+Claude & Coding support, debugging & OCR pipeline, preprocessing, OpenCV usage & Adapted suggestions; final code written and modified by me. Stage~2 and Stage~4 done independently.\\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{1.5em}
+\noindent I confirm that I wrote the corner-selection logic and the comparison
+analysis myself, and that I can explain and modify every part of my
+submission.
+
+\vspace{2.5em}
+\noindent Name: \rule{3.6cm}{0.4pt}\hfill Student no.: \rule{2.6cm}{0.4pt}\hfill
+Signature: \rule{3.2cm}{0.4pt}\hfill Date: \rule{2.2cm}{0.4pt}
 
 \end{document}
